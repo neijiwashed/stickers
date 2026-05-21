@@ -190,7 +190,7 @@ async def process_pack_link(message: Message, state: FSMContext):
         await state.update_data(edit_pack_name=pack_name)
         await message.answer(
             f"Пак {pack_name} успешно найден!\n\n"
-            "Теперь отправьте мне фотографию, которую хотите добавить. "
+            "Тепер отправьте мне фотографию, которую хотите добавить. "
             "Вы можете отправлять новые фото по одному. Когда закончите, просто введите /cancel"
         )
         await state.set_state(EditPack.waiting_for_sticker_photo)
@@ -277,7 +277,7 @@ async def process_clone(message: Message, state: FSMContext):
             title=source_set.title,
             stickers=[{
                 "sticker": sticker_file,
-                "emoji_list": first_sticker.emoji if first_sticker.emoji else ["💬"],
+                "emoji_list": [first_sticker.emoji] if first_sticker.emoji else ["💬"],
                 "format": "static"
             }],
             sticker_format="static"
@@ -297,7 +297,7 @@ async def process_clone(message: Message, state: FSMContext):
                         name=target_pack_name,
                         sticker={
                             "sticker": sticker_file,
-                            "emoji_list": sticker.emoji if sticker.emoji else ["💬"],
+                            "emoji_list": [sticker.emoji] if sticker.emoji else ["💬"],
                             "format": "static"
                         }
                     )
@@ -309,7 +309,7 @@ async def process_clone(message: Message, state: FSMContext):
         await status_msg.edit_text(
             "Стикерпак успешно скопирован под ваше управление!\n\n"
             f"Новая ссылка: t.me/addstickers/{target_pack_name}\n\n"
-            "Тепер вы сможете редактировать его через команду /editpack !"
+            "Теперь вы сможете редактировать его через команду /editpack !"
         )
         await state.clear()
     except Exception as e:
