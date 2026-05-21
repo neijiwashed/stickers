@@ -50,7 +50,17 @@ async def start_command(message: Message):
 
 def resize_image(image_bytes: bytes) -> bytes:
     img = Image.open(BytesIO(image_bytes))
-    img.thumbnail((512, 512))
+    width, height = img.size
+    
+    if width > height:
+        new_width = 512
+        new_height = int(round((height * 512) / width))
+    else:
+        new_height = 512
+        new_width = int(round((width * 512) / height))
+        
+    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+    
     out_bytes = BytesIO()
     img.save(out_bytes, format="PNG")
     return out_bytes.getvalue()
