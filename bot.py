@@ -17,12 +17,7 @@ logging.basicConfig(level=logging.INFO)
 TOKEN = os.environ.get("TOKEN")
 ADMIN_ID_RAW = os.environ.get("ADMIN_ID", "0")
 
-logging.info("ПРИЛОЖЕНИЕ ЗАПУСКАЕТСЯ...")
-logging.info(f"Проверка TOKEN: {'НАЙДЕН' if TOKEN else 'НЕ НАЙДЕН!'}")
-logging.info(f"Проверка ADMIN_ID: {ADMIN_ID_RAW}")
-
 if not TOKEN or ADMIN_ID_RAW == "0":
-    logging.error("КРИТИЧЕСКАЯ ОШИБКА: Переменные окружения TOKEN или ADMIN_ID пусты или настроены неверно!")
     ADMIN_ID = 0
 else:
     ADMIN_ID = int(ADMIN_ID_RAW)
@@ -260,42 +255,61 @@ async def process_clone(message: Message, state: FSMContext):
             await status_msg.edit_text("Этот стикерпак пуст.")
             await state.clear()
             return
+
         bot_user = await bot.get_me()
         clean_old_name = re.sub(r'[^a-zA-Z0-9_]', '', source_pack_name.split("_by_")[0])
         target_pack_name = f"clone_{clean_old_name}_by_{bot_user.username}"
         if len(target_pack_name) > 64:
             target_pack_name = f"c_{clean_old_name[:30]}_by_{bot_user.username}"
-        await status_msg.edit_text(f"Найдено стикеров: {len(source_set.stickers)}. Начинаю копирование на ваш аккаунт, это займет какое-то время...")
-        prepared_stickers = []
-        for index, sticker in enumerate(source_set.stickers):
-            try:
-                file_info = await bot.get_file(sticker.file_id)
-                file_bytes = await bot.download_file(file_info.file_path)
-                processed_png = resize_image(file_bytes.read())
-                sticker_file = BufferedInputFile(processed_png, filename=f"sticker_{index}.png")
-                prepared_stickers.append({
-                    "sticker": sticker_file,
-                    "emoji_list": sticker.emoji if sticker.emoji else ["💬"],
-                    "format": "static"
-                })
-            except Exception as file_err:
-                logging.error(f"Ошибка при обработке отдельного стикера: {file_err}")
-                continue
-        if not prepared_stickers:
-            await status_msg.edit_text("Не удалось обработать ни один стикер из этого пака.")
-            await state.clear()
-            return
+
+        total_stickers = len(source_set.stickers)
+        await status_msg.edit_text(f"Найдено стикеров: {total_stickers}. Скачиваю первый стикер для создания пака...")
+
+        first_sticker = source_set.stickers[0]
+        file_info = await bot.get_file(first_sticker.file_id)
+        file_bytes = await bot.download_file(file_info.file_path)
+        processed_png = resize_image(file_bytes.read())
+        sticker_file = BufferedInputFile(processed_png, filename="first_sticker.png")
+
         await bot.create_new_sticker_set(
             user_id=ADMIN_ID,
             name=target_pack_name,
             title=source_set.title,
-            stickers=prepared_stickers,
+            stickers=[{
+                "sticker": sticker_file,
+                "emoji_list": first_sticker.emoji if first_sticker.emoji else ["💬"],
+                "format": "static"
+            }],
             sticker_format="static"
         )
+
+        if total_stickers > 1:
+            for index, sticker in enumerate(source_set.stickers[1:], start=2):
+                await status_msg.edit_text(f"Копирование в процессе: обработано {index} из {total_stickers}...")
+                try:
+                    file_info = await bot.get_file(sticker.file_id)
+                    file_bytes = await bot.download_file(file_info.file_path)
+                    processed_png = resize_image(file_bytes.read())
+                    sticker_file = BufferedInputFile(processed_png, filename=f"sticker_{index}.png")
+                    
+                    await bot.add_sticker_to_set(
+                        user_id=ADMIN_ID,
+                        name=target_pack_name,
+                        sticker={
+                            "sticker": sticker_file,
+                            "emoji_list": sticker.emoji if sticker.emoji else ["💬"],
+                            "format": "static"
+                        }
+                    )
+                    await asyncio.sleep(0.4)
+                except Exception as file_err:
+                    logging.error(f"Пропущен стикер {index} из-за ошибки: {file_err}")
+                    continue
+
         await status_msg.edit_text(
             "Стикерпак успешно скопирован под ваше управление!\n\n"
             f"Новая ссылка: t.me/addstickers/{target_pack_name}\n\n"
-            "Теперь вы сможете редактировать его через команду /editpack !"
+            "Тепер вы сможете редактировать его через команду /editpack !"
         )
         await state.clear()
     except Exception as e:
