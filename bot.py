@@ -154,7 +154,7 @@ async def process_photo_and_create(message: Message, state: FSMContext):
             await status_msg.edit_text("Ошибка: Такое имя ссылки уже занято. Введите другое короткое имя:")
             await state.set_state(CreatePack.waiting_for_name)
         else:
-            await status_msg.edit_text(f"Произошла ошибка: {e}")
+            await status_msg.edit_text(f"Произошла ошибка: {str(e)[:200]}")
             await state.clear()
 
 
@@ -223,7 +223,7 @@ async def process_add_sticker(message: Message, state: FSMContext):
         await status_msg.edit_text("Стикер успешно добавлен!\n\nВы можете отправить следующую фотографию или выйти через /cancel")
     except Exception as e:
         logging.error(e)
-        await status_msg.edit_text(f"Не удалось добавить стикер. Ошибка: {e}")
+        await status_msg.edit_text(f"Не удалось добавить стикер. Ошибка: {str(e)[:200]}")
 
 
 @dp.message(EditPack.waiting_for_sticker_photo)
@@ -299,8 +299,8 @@ async def process_clone(message: Message, state: FSMContext):
         )
         await state.clear()
     except Exception as e:
-        logging.error(e)
-        await status_msg.edit_text(f"Не удалось скопировать пак. Ошибка: {e}")
+        logging.exception("Критическая ошибка при клонировании пака:")
+        await status_msg.edit_text(f"Не удалось скопировать пак. Короткая ошибка: {str(e)[:200]}")
         await state.clear()
 
 
