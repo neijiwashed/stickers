@@ -56,8 +56,9 @@ async def start_command(message: Message):
     )
 
 
-def resize_image(image_bytes: bytes) -> bytes:
-    img = Image.open(BytesIO(image_bytes))
+def resize_image(bio_object: BytesIO) -> bytes:
+    bio_object.seek(0)
+    img = Image.open(bio_object)
     if img.format == "WEBP":
         img = img.convert("RGBA")
     width, height = img.size
@@ -132,7 +133,7 @@ async def process_photo_and_create(message: Message, state: FSMContext):
     try:
         photo_file = await bot.get_file(message.photo[-1].file_id)
         photo_bytes = await bot.download_file(photo_file.file_path)
-        processed_png = resize_image(photo_bytes.read())
+        processed_png = resize_image(photo_bytes)
         sticker_file = BufferedInputFile(processed_png, filename="sticker.png")
         await bot.create_new_sticker_set(
             user_id=ADMIN_ID,
@@ -208,7 +209,7 @@ async def process_add_sticker(message: Message, state: FSMContext):
     try:
         photo_file = await bot.get_file(message.photo[-1].file_id)
         photo_bytes = await bot.download_file(photo_file.file_path)
-        processed_png = resize_image(photo_bytes.read())
+        processed_png = resize_image(photo_bytes)
         sticker_file = BufferedInputFile(processed_png, filename="sticker.png")
         await bot.add_sticker_to_set(
             user_id=ADMIN_ID,
@@ -268,7 +269,7 @@ async def process_clone(message: Message, state: FSMContext):
         first_sticker = source_set.stickers[0]
         file_info = await bot.get_file(first_sticker.file_id)
         file_bytes = await bot.download_file(file_info.file_path)
-        processed_png = resize_image(file_bytes.read())
+        processed_png = resize_image(file_bytes)
         sticker_file = BufferedInputFile(processed_png, filename="first_sticker.png")
 
         await bot.create_new_sticker_set(
@@ -287,9 +288,11 @@ async def process_clone(message: Message, state: FSMContext):
             for index, sticker in enumerate(source_set.stickers[1:], start=2):
                 await status_msg.edit_text(f"Копирование в процессе: обработано {index} из {total_stickers}...")
                 try:
+                    if sticker.is_video or sticker.is_animated:
+                        continue
                     file_info = await bot.get_file(sticker.file_id)
                     file_bytes = await bot.download_file(file_info.file_path)
-                    processed_png = resize_image(file_bytes.read())
+                    processed_png = resize_image(file_bytes)
                     sticker_file = BufferedInputFile(processed_png, filename=f"sticker_{index}.png")
                     
                     await bot.add_sticker_to_set(
@@ -323,17 +326,17 @@ async def handle_ping(request):
 
 
 async def main():
-    if TOKEN and ADMIN_ID != 0:
-        asyncio.create_task(dp.start_polling(bot))
     app = web.Application()
-    app.router.add_get("/", handle_ping)
+    app.router.add_route("*", "/", handle_ping)
+    
+    port = int(os.environ.get("PORT", 8080))
     runner = web.AppRunner(app)
     await runner.setup()
-    port = int(os.environ.get("PORT", 8080))
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    while True:
-        await asyncio.sleep(3600)
+    
+    if TOKEN and ADMIN_ID != 0:
+        await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
