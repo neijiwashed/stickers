@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 TOKEN = os.environ.get("TOKEN")
 ADMIN_ID_RAW = os.environ.get("ADMIN_ID", "0")
 
-logging.info(f"ПРИЛОЖЕНИЕ ЗАПУСКАЕТСЯ...")
+logging.info("ПРИЛОЖЕНИЕ ЗАПУСКАЕТСЯ...")
 logging.info(f"Проверка TOKEN: {'НАЙДЕН' if TOKEN else 'НЕ НАЙДЕН!'}")
 logging.info(f"Проверка ADMIN_ID: {ADMIN_ID_RAW}")
 
@@ -42,22 +42,29 @@ class EditPack(StatesGroup):
     waiting_for_sticker_photo = State()
 
 
+class ClonePack(StatesGroup):
+    waiting_for_source_link = State()
+
+
 @dp.message(CommandStart())
 async def start_command(message: Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("Привет! К сожалению, этот бот настроен только для администратора.")
         return
     await message.answer(
-        "Привет, админ! Бот готов к управлению стикерами.\n\n"
+        "Привет, админ! Бот готов к работе со стикерами.\n\n"
         "Доступные команды:\n"
-        "➕ /newpack — Создать новый стикерпак\n"
-        "✏️ /editpack — Добавить стикеры в существующий пак\n"
-        "❌ /cancel — Отменить текущее действие"
+        "/newpack — Создать совершенно новый стикерпак на вашем аккаунте\n"
+        "/editpack — Добавить новые изображения в ваш существующий стикерпак\n"
+        "/clonepack — Полностью скопировать чужой статический пак под ваше управление\n"
+        "/cancel — Отменить текущий процесс ввода данных"
     )
 
 
 def resize_image(image_bytes: bytes) -> bytes:
     img = Image.open(BytesIO(image_bytes))
+    if img.format == "WEBP":
+        img = img.convert("RGBA")
     width, height = img.size
     if width > height:
         new_width = 512
@@ -136,7 +143,7 @@ async def process_photo_and_create(message: Message, state: FSMContext):
             user_id=ADMIN_ID,
             name=user_data["pack_name"],
             title=user_data["pack_title"],
-            stickers=[{"sticker": sticker_file, "emoji_list": ["✨"], "format": "static"}],
+            stickers=[{"sticker": sticker_file, "emoji_list": ["💬"], "format": "static"}],
             sticker_format="static",
         )
         await status_msg.edit_text(f"Стикерпак успешно создан.\nСсылка: t.me/addstickers/{user_data['pack_name']}")
@@ -161,7 +168,7 @@ async def start_pack_editing(message: Message, state: FSMContext):
     if message.from_user.id != ADMIN_ID:
         return
     await message.answer(
-        "Отправьте мне ссылку на ваш стикерпак (например, `t.me/addstickers/name_by_bot`) "
+        "Отправьте мне ссылку на ваш стикерпак (например, t.me/addstickers/name_by_bot) "
         "или просто пришлите его техническое имя."
     )
     await state.set_state(EditPack.waiting_for_pack_link)
@@ -172,22 +179,30 @@ async def process_pack_link(message: Message, state: FSMContext):
     if not message.text:
         await message.answer("Пожалуйста, отправьте ссылку текстом.")
         return
-    
     raw_text = message.text.strip()
     pack_name = raw_text.split("/")[-1] if "/" in raw_text else raw_text
-    
+    bot_user = await bot.get_me()
+    if not pack_name.endswith(f"_by_{bot_user.username}"):
+        await message.answer(
+            f"Этот пак создан не через меня!\n\n"
+            f"Имя пака должно заканчиваться на _by_{bot_user.username}. "
+            f"Я могу редактировать только те паки, которые я сам создал."
+        )
+        await state.clear()
+        return
     try:
         await bot.get_sticker_set(name=pack_name)
         await state.update_data(edit_pack_name=pack_name)
         await message.answer(
-            f"Пак `{pack_name}` успешно найден!\n\n"
-            "Теперь отправьте мне фотографию, которую хотите добавить в этот пак. "
+            f"Пак {pack_name} успешно найден!\n\n"
+            "Теперь отправьте мне фотографию, которую хотите добавить. "
             "Вы можете отправлять новые фото по одному. Когда закончите, просто введите /cancel"
         )
         await state.set_state(EditPack.waiting_for_sticker_photo)
     except Exception as e:
         logging.error(e)
-        await message.answer("Ошибка: Не удалось найти этот стикерпак. Проверьте правильность ссылки и убедитесь, что он создан через этого бота.")
+        await message.answer("Ошибка: Не удалось найти этот стикерпак. Проверьте правильность ссылки.")
+        await state.clear()
 
 
 @dp.message(EditPack.waiting_for_sticker_photo, F.photo)
@@ -195,22 +210,17 @@ async def process_add_sticker(message: Message, state: FSMContext):
     status_msg = await message.answer("Добавляю стикер в пак, пожалуйста, подождите...")
     user_data = await state.get_data()
     pack_name = user_data["edit_pack_name"]
-    
     try:
         photo_file = await bot.get_file(message.photo[-1].file_id)
         photo_bytes = await bot.download_file(photo_file.file_path)
         processed_png = resize_image(photo_bytes.read())
         sticker_file = BufferedInputFile(processed_png, filename="sticker.png")
-        
         await bot.add_sticker_to_set(
             user_id=ADMIN_ID,
             name=pack_name,
-            sticker={"sticker": sticker_file, "emoji_list": ["✨"], "format": "static"}
+            sticker={"sticker": sticker_file, "emoji_list": ["💬"], "format": "static"}
         )
-        await status_msg.edit_text(
-            "Стикер успешно добавлен! ✅\n\n"
-            "Вы можете отправить следующую фотографию или завершить процесс командой /cancel"
-        )
+        await status_msg.edit_text("Стикер успешно добавлен!\n\nВы можете отправить следующую фотографию или выйти через /cancel")
     except Exception as e:
         logging.error(e)
         await status_msg.edit_text(f"Не удалось добавить стикер. Ошибка: {e}")
@@ -219,6 +229,79 @@ async def process_add_sticker(message: Message, state: FSMContext):
 @dp.message(EditPack.waiting_for_sticker_photo)
 async def missing_photo_edit(message: Message):
     await message.answer("Пожалуйста, отправьте фотографию для нового стикера или нажмите /cancel для выхода.")
+
+
+@dp.message(Command("clonepack"))
+async def start_pack_cloning(message: Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        return
+    await message.answer(
+        "Начинаем клонирование стикерпака.\n\n"
+        "Отправьте мне ссылку на любой существующий статический стикерпак, который вы хотите скопировать."
+    )
+    await state.set_state(ClonePack.waiting_for_source_link)
+
+
+@dp.message(ClonePack.waiting_for_source_link)
+async def process_clone(message: Message, state: FSMContext):
+    if not message.text:
+        await message.answer("Пожалуйста, отправьте ссылку текстом.")
+        return
+    raw_text = message.text.strip()
+    source_pack_name = raw_text.split("/")[-1] if "/" in raw_text else raw_text
+    status_msg = await message.answer("Получаю информацию о стикерпаке...")
+    try:
+        source_set = await bot.get_sticker_set(name=source_pack_name)
+        if source_set.is_animated or source_set.is_video:
+            await status_msg.edit_text("Извините, бот поддерживает клонирование только обычных статических стикерпаков.")
+            await state.clear()
+            return
+        if not source_set.stickers:
+            await status_msg.edit_text("Этот стикерпак пуст.")
+            await state.clear()
+            return
+        bot_user = await bot.get_me()
+        clean_old_name = re.sub(r'[^a-zA-Z0-9_]', '', source_pack_name.split("_by_")[0])
+        target_pack_name = f"clone_{clean_old_name}_by_{bot_user.username}"
+        if len(target_pack_name) > 64:
+            target_pack_name = f"c_{clean_old_name[:30]}_by_{bot_user.username}"
+        await status_msg.edit_text(f"Найдено стикеров: {len(source_set.stickers)}. Начинаю копирование на ваш аккаунт, это займет какое-то время...")
+        prepared_stickers = []
+        for index, sticker in enumerate(source_set.stickers):
+            try:
+                file_info = await bot.get_file(sticker.file_id)
+                file_bytes = await bot.download_file(file_info.file_path)
+                processed_png = resize_image(file_bytes.read())
+                sticker_file = BufferedInputFile(processed_png, filename=f"sticker_{index}.png")
+                prepared_stickers.append({
+                    "sticker": sticker_file,
+                    "emoji_list": sticker.emoji if sticker.emoji else ["💬"],
+                    "format": "static"
+                })
+            except Exception as file_err:
+                logging.error(f"Ошибка при обработке отдельного стикера: {file_err}")
+                continue
+        if not prepared_stickers:
+            await status_msg.edit_text("Не удалось обработать ни один стикер из этого пака.")
+            await state.clear()
+            return
+        await bot.create_new_sticker_set(
+            user_id=ADMIN_ID,
+            name=target_pack_name,
+            title=source_set.title,
+            stickers=prepared_stickers,
+            sticker_format="static"
+        )
+        await status_msg.edit_text(
+            "Стикерпак успешно скопирован под ваше управление!\n\n"
+            f"Новая ссылка: t.me/addstickers/{target_pack_name}\n\n"
+            "Теперь вы сможете редактировать его через команду /editpack !"
+        )
+        await state.clear()
+    except Exception as e:
+        logging.error(e)
+        await status_msg.edit_text(f"Не удалось скопировать пак. Ошибка: {e}")
+        await state.clear()
 
 
 async def handle_ping(request):
