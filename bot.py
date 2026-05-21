@@ -5,7 +5,7 @@ import re
 from io import BytesIO
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, Message
@@ -35,6 +35,17 @@ class CreatePack(StatesGroup):
     waiting_for_title = State()
     waiting_for_name = State()
     waiting_for_photo = State()
+
+
+@dp.message(CommandStart())
+async def start_command(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Привет! К сожалению, этот бот настроен только для администратора.")
+        return
+    await message.answer(
+        "Привет, админ! Бот успешно запущен на сервере и готов к работе.\n\n"
+        "Чтобы создать новый стикерпак, отправь команду: /newpack"
+    )
 
 
 def resize_image(image_bytes: bytes) -> bytes:
@@ -124,7 +135,7 @@ async def process_photo_and_create(message: Message, state: FSMContext):
             user_id=ADMIN_ID,
             name=user_data["pack_name"],
             title=user_data["pack_title"],
-            stickers=[{"sticker": sticker_file, "emoji_list": ["✨"]}],
+            stickers=[{"sticker": sticker_file, "emoji_list": ["✨"], "format": "static"}],
             sticker_format="static",
         )
 
